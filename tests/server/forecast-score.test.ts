@@ -1,0 +1,114 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { closeDatabase, database } from '../../src/lib/server/db';
+import { register } from '../../src/lib/server/auth';
+import { createRoom, addForecast, reviseForecast, reconcileMarket, getRoom, getActivity, setSettings, markNoticeRead } from '../../src/lib/server/domain';
+import { DomainError } from '../../src/lib/server/errors';
+import type { Market } from '../../src/lib/contracts';
+
+let dir: string;
+const future = () => new Date(Date.now() + 3_600_000).toISOString();
+const market = (deadline = future(), winner: string | null = null): Market => ({ venueId: 'limitless', venueMarketId: '17', slug: 'test-17', question: 'Test?', description: 'Resolvable terms', deadline, resolutionSource: 'Limitless', status: winner ? 'resolved' : 'open', outcomeIds: ['101', '202'], outcomeLabels: ['Yes', 'No'], midpointYes: .4, priceLabel: 'CLOB midpoint', winningOutcome: winner, payoutNumerators: winner === '101' ? [1, 0] : winner === '202' ? [0, 1] : null, termsVersion: 'terms-1', observedAt: new Date().toISOString(), source: 'LIVE_LIMITLESS' });
+beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'prediction-score-')); process.env.DB_PATH = join(dir, 'test.sqlite'); });
+afterEach(() => { vi.useRealTimers(); closeDatabase(); rmSync(dir, { recursive: true, force: true }); delete process.env.DB_PATH; });
+
+describe('forecasts and immutable corrections', () => {
+  it('locks revisions at deadline and preserves every previous revision', () => {
+    const user = register('alice', 'long-secret-one').user;
+    const room = createRoom(user.id, 'Room', '', false);
+    const m = market();
+    const first = addForecast(user.id, room.id, m, '101', .7, 'first');
+    const revised = reviseForecast(user.id, first.id, .8, 'new reasoning', m);
+    expect(revised.revisions).toEqual([{ probability: .7, rationale: 'first', at: first.createdAt }, { probability: .8, rationale: 'new reasoning', at: revised.revisedAt }]);
+    vi.setSystemTime(new Date(m.deadline));
+    expect(() => reviseForecast(user.id, first.id, .9, 'late', m)).toThrow(DomainError);
+  });
+  it('scores YES probability independently of a NO outcome pick', () => {
+    const user = register('alice', 'long-secret-one').user;
+    const room = createRoom(user.id, 'Room', '', false);
+    const m = market();
+    const forecast = addForecast(user.id, room.id, m, '202', .8, 'NO is the selected outcome');
+    reconcileMarket(market(m.deadline, '101'));
+    expect(getRoom(room.id, user.id).forecasts[0].score).toBeCloseTo(96);
+    expect(database().prepare('SELECT score FROM score_history WHERE forecast_id = ?').get(forecast.id)).toMatchObject({ score: 96 });
+  });
+  it('derives one-sided resolved payouts without a winner index and scores corrections', () => {
+    const user = register('alice', 'long-secret-one').user;
+    const room = createRoom(user.id, 'Room', '', false);
+    const m = market();
+    const forecast = addForecast(user.id, room.id, m, '202', .8, 'YES probability');
+    reconcileMarket({ ...m, status: 'resolved', winningOutcome: null, payoutNumerators: [1, 0] });
+    expect(getRoom(room.id, user.id).forecasts[0].score).toBeCloseTo(96);
+    reconcileMarket({ ...m, status: 'resolved', winningOutcome: null, payoutNumerators: [0, 1] });
+    expect(getActivity(user.id).forecasts[0].score).toBeCloseTo(36);
+    expect(database().prepare('SELECT outcome_id FROM score_history WHERE forecast_id = ? ORDER BY id').all(forecast.id)).toEqual([{ outcome_id: '101' }, { outcome_id: '202' }]);
+    expect(getActivity(user.id).forecasts[0].scoreHistory.map(item => item.outcomeId)).toEqual(['101', '202']);
+    expect(getActivity(user.id).forecasts[0].scoreHistory[1].score).toBeCloseTo(36);
+  });
+  it('rejects a revision if venue status, freshness or identity changes before lock time', () => {
+    const user = register('alice', 'long-secret-one').user;
+    const room = createRoom(user.id, 'Room', '', false);
+    const m = market();
+    const forecast = addForecast(user.id, room.id, m, '101', .8, 'original');
+    const revised = (current: Market) => reviseForecast(user.id, forecast.id, .4, 'changed', current);
+    expect(() => revised({ ...m, status: 'closed' })).toThrow(DomainError);
+    expect(() => revised({ ...m, source: 'STALE_LIMITLESS' })).toThrow(DomainError);
+    expect(() => revised({ ...m, termsVersion: 'other-terms' })).toThrow(DomainError);
+    expect(() => revised({ ...m, observedAt: new Date(Date.now() - 130_000).toISOString() })).toThrow(DomainError);
+    expect(() => revised({ ...m, venueMarketId: '18' })).toThrow(DomainError);
+    expect(() => revised({ ...m, outcomeIds: ['301', '202'] })).toThrow(DomainError);
+    expect(revised(m).probability).toBe(.4);
+    expect(getRoom(room.id, user.id).forecasts[0].revisions).toHaveLength(2);
+  });
+  it('updates scores on corrected resolution, retains history, excludes split', () => {
+    const user = register('alice', 'long-secret-one').user;
+    const room = createRoom(user.id, 'Room', '', false);
+    const m = market();
+    const forecast = addForecast(user.id, room.id, m, '101', .8, 'reason');
+    reconcileMarket({ ...m, status: 'resolved', winningOutcome: null, payoutNumerators: null });
+    expect(database().prepare('SELECT count(*) AS n FROM score_history WHERE forecast_id = ?').get(forecast.id)).toMatchObject({ n: 0 });
+    reconcileMarket(market(m.deadline, '101'));
+    expect(getRoom(room.id, user.id).forecasts[0].score).toBeCloseTo(96);
+    reconcileMarket({ ...m, status: 'resolved', winningOutcome: null, payoutNumerators: null });
+    expect(getRoom(room.id, user.id).forecasts[0]).toMatchObject({ scoreState: 'last-known', score: expect.closeTo(96) });
+    reconcileMarket(market(m.deadline, '101'));
+    expect(getRoom(room.id, user.id).forecasts[0].scoreState).toBe('confirmed');
+    expect(getRoom(room.id, user.id).forecasts[0].scoreHistory).toHaveLength(1);
+    expect(() => reviseForecast(user.id, forecast.id, .5, 'after resolution', m)).toThrow(DomainError);
+    reconcileMarket(market(m.deadline, '202'));
+    expect(getActivity(user.id).forecasts[0].score).toBeCloseTo(36);
+    const history = database().prepare('SELECT outcome_id FROM score_history WHERE forecast_id = ? ORDER BY id').all(forecast.id) as { outcome_id: string }[];
+    expect(history.map(x => x.outcome_id)).toEqual(['101', '202']);
+    reconcileMarket({ ...market(m.deadline), status: 'resolved', winningOutcome: null, payoutNumerators: [50, 50] });
+    expect(getRoom(room.id, user.id).forecasts[0].score).toBeNull();
+    expect(database().prepare('SELECT count(*) AS n FROM score_history WHERE forecast_id = ?').get(forecast.id)).toMatchObject({ n: 3 });
+  });
+  it('does not score or settle contradictory venue winner and payout data', () => {
+    const user = register('alice', 'long-secret-one').user;
+    const room = createRoom(user.id, 'Room', '', false);
+    const m = market();
+    const forecast = addForecast(user.id, room.id, m, '101', .8, 'reason');
+    reconcileMarket({ ...market(m.deadline, '101'), payoutNumerators: [0, 1] });
+    expect(getRoom(room.id, user.id).forecasts[0].score).toBeNull();
+    expect(database().prepare('SELECT count(*) AS n FROM score_history WHERE forecast_id = ?').get(forecast.id)).toMatchObject({ n: 0 });
+  });
+  it('creates only opted-in notices, persists read state, and respects later opt-out', () => {
+    const user = register('alice', 'long-secret-one').user;
+    const room = createRoom(user.id, 'Room', '', false);
+    const m = market();
+    addForecast(user.id, room.id, m, '101', .8, 'reason');
+    reconcileMarket(market(m.deadline, '101'));
+    expect(getActivity(user.id).notices).toHaveLength(0);
+    setSettings(user.id, true);
+    reconcileMarket(market(m.deadline, '202'));
+    const notice = getActivity(user.id).notices[0];
+    expect(notice.kind).toBe('score-correction');
+    expect(markNoticeRead(user.id, notice.id).readAt).not.toBeNull();
+    setSettings(user.id, false);
+    reconcileMarket(market(m.deadline, '101'));
+    expect(getActivity(user.id).notices).toHaveLength(1);
+    expect(getActivity(user.id).notices[0].readAt).not.toBeNull();
+  });
+});
