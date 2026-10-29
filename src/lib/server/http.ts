@@ -45,8 +45,8 @@ export function positiveId(raw: string): number {
   if (!/^[1-9]\d*$/.test(raw) || !Number.isSafeInteger(id)) throw new DomainError('Invalid resource ID', 400);
   return id;
 }
-export function issueCookie(responseValue: NextResponse, token: string): NextResponse {
-  responseValue.cookies.set(sessionCookie, token, { httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production', path: '/', maxAge: 30 * 24 * 60 * 60 });
+export function issueCookie(responseValue: NextResponse, token: string, maxAge = 30 * 24 * 60 * 60): NextResponse {
+  responseValue.cookies.set(sessionCookie, token, { httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production', path: '/', maxAge });
   return responseValue;
 }
 export function clearCookie(responseValue: NextResponse): NextResponse {

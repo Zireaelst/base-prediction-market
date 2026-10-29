@@ -16,6 +16,9 @@ export function database(): Database.Database {
   db.exec(`
     CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, handle TEXT NOT NULL UNIQUE COLLATE NOCASE, password_hash TEXT NOT NULL, created_at TEXT NOT NULL, notifications INTEGER NOT NULL DEFAULT 0);
     CREATE TABLE IF NOT EXISTS sessions (token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, expires_at TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS wallet_accounts (chain_id INTEGER NOT NULL CHECK (chain_id = 84532), address TEXT NOT NULL, user_id INTEGER NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE, created_at TEXT NOT NULL, PRIMARY KEY (chain_id, address));
+    CREATE TABLE IF NOT EXISTS wallet_challenges (nonce_hash TEXT PRIMARY KEY, address TEXT NOT NULL, origin TEXT NOT NULL, message TEXT NOT NULL, expires_at TEXT NOT NULL);
+    CREATE INDEX IF NOT EXISTS wallet_challenges_expiry ON wallet_challenges(expires_at);
     CREATE TABLE IF NOT EXISTS rooms (id INTEGER PRIMARY KEY, name TEXT NOT NULL, description TEXT NOT NULL, owner_id INTEGER NOT NULL REFERENCES users(id), private INTEGER NOT NULL, lock_at TEXT, created_at TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS room_members (room_id INTEGER NOT NULL REFERENCES rooms(id) ON DELETE CASCADE, user_id INTEGER NOT NULL REFERENCES users(id), PRIMARY KEY (room_id, user_id));
     CREATE TABLE IF NOT EXISTS forecasts (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id), room_id INTEGER NOT NULL REFERENCES rooms(id), market_id TEXT NOT NULL, market_slug TEXT NOT NULL, outcome_id TEXT NOT NULL, terms_version TEXT, probability REAL NOT NULL, rationale TEXT NOT NULL, created_at TEXT NOT NULL, revised_at TEXT NOT NULL, lock_at TEXT NOT NULL, score REAL, score_version TEXT, UNIQUE (user_id, room_id, market_id));
