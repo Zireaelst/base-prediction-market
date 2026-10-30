@@ -12,6 +12,7 @@ function tokenDigest(token: string): string { return createHash('sha256').update
 export function register(handle: string, password: string): { user: User; token: string } {
   assertInput(typeof handle === 'string' && /^[a-zA-Z0-9_]{3,24}$/.test(handle), 'Handle must be 3–24 letters, numbers or underscores');
   assertInput(!/^w_[a-f0-9]{20}$/i.test(handle), 'This handle is reserved for wallet sign-in');
+  assertInput(!/^p_[a-f0-9]{20}$/i.test(handle), 'This handle is reserved for Privy sign-in');
   assertInput(typeof password === 'string' && password.length >= 10 && password.length <= 256, 'Password must be between 10 and 256 characters');
   const salt = randomBytes(32).toString('hex');
   const passwordHash = `${salt}:${scryptSync(password, salt, 64).toString('hex')}`;
@@ -28,7 +29,7 @@ export function register(handle: string, password: string): { user: User; token:
 export function login(handle: string, password: string): { user: User; token: string } {
   assertInput(typeof handle === 'string' && typeof password === 'string', 'Handle and password are required');
   const row = database().prepare('SELECT * FROM users WHERE handle = ?').get(handle) as UserRow | undefined;
-  if (!row || row.password_hash === 'wallet-only') throw new DomainError('Invalid handle or password', 401);
+  if (!row || row.password_hash === 'wallet-only' || row.password_hash === 'privy-only') throw new DomainError('Invalid handle or password', 401);
   const [salt, digest] = row.password_hash.split(':');
   const candidate = scryptSync(password, salt, 64);
   if (!timingSafeEqual(candidate, Buffer.from(digest, 'hex'))) throw new DomainError('Invalid handle or password', 401);

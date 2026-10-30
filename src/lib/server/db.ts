@@ -17,6 +17,7 @@ export function database(): Database.Database {
     CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, handle TEXT NOT NULL UNIQUE COLLATE NOCASE, password_hash TEXT NOT NULL, created_at TEXT NOT NULL, notifications INTEGER NOT NULL DEFAULT 0);
     CREATE TABLE IF NOT EXISTS sessions (token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, expires_at TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS wallet_accounts (chain_id INTEGER NOT NULL CHECK (chain_id = 84532), address TEXT NOT NULL, user_id INTEGER NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE, created_at TEXT NOT NULL, PRIMARY KEY (chain_id, address));
+    CREATE TABLE IF NOT EXISTS privy_accounts (app_id TEXT NOT NULL, privy_user_id TEXT NOT NULL, user_id INTEGER NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE, created_at TEXT NOT NULL, PRIMARY KEY (app_id, privy_user_id));
     CREATE TABLE IF NOT EXISTS wallet_challenges (nonce_hash TEXT PRIMARY KEY, address TEXT NOT NULL, origin TEXT NOT NULL, message TEXT NOT NULL, expires_at TEXT NOT NULL);
     CREATE INDEX IF NOT EXISTS wallet_challenges_expiry ON wallet_challenges(expires_at);
     CREATE TABLE IF NOT EXISTS rooms (id INTEGER PRIMARY KEY, name TEXT NOT NULL, description TEXT NOT NULL, owner_id INTEGER NOT NULL REFERENCES users(id), private INTEGER NOT NULL, kind TEXT NOT NULL DEFAULT 'shared' CHECK (kind IN ('shared', 'personal')), lock_at TEXT, created_at TEXT NOT NULL);
