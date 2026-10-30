@@ -5,3 +5,6 @@ node_modules/
 !.env.example
 .data/
 coverage/
+.vercel
+contracts/cache/
+contracts/out/
