@@ -1,8 +1,8 @@
 # PREDICT.
 
-**Think in probabilities, not orders.** PREDICT. is a mobile-first prediction app for browsing real market questions, discussing forecasts in rooms, and experimenting with a separate paper-trading ledger. Limitless supplies **public, read-only** market snapshots. Sign in with a local password or an optional **Base Sepolia wallet signature**; the app never sends a venue order, moves forecast funds, or signs a blockchain transaction.
+**Think in probabilities, not orders.** PREDICT. is a mobile-first prediction app with read-only Limitless market snapshots, free forecasts and a separate paper ledger. An experimental Base Sepolia mode can submit onchain predictions using valueless test tokens. Sign in with a local password, a Base Sepolia wallet signature, or configured Privy email login.
 
-> **Local research software, not a trading product.** No public deployment, real-money execution, custody, oracle, AMM, or live-trading readiness is included.
+> **Testnet research software, not a real-money trading product.** No live-money execution or production readiness is included. Testnet contracts are unaudited.
 
 ## Product preview
 
@@ -40,7 +40,7 @@ The design uses black, off-white and restrained lavender, bundled **Geist Pixel 
 | Explore | Swipe-first cards and a List alternative; independently paginated live Limitless Crypto, Sport, Esports, Finance and Politics categories. Right/left chooses the first/second **venue-labeled** outcome for review, never saves on gesture; Skip is separate. Loaded-only search/filter, observed timestamps, stale/partial/outage states and retry remain available. Unsupported binary/group mappings are excluded rather than guessed. |
 | Market detail | Question, original venue resolution terms, deadline, venue ID, outcome identities, terms version and observed probabilities. Paper action is explicitly separate from forecasting. |
 | Accounts and profile | Local password or Base Sepolia EIP-4361 wallet sign-in, separate identities, revocable server-side session, private profile activity, notification preference and sign-out. No wallet or funds are required for the password path. |
-| Rooms and forecasts | Public/private shared rooms with owner invitation and membership-checked reads/writes, plus an owner-only personal space created on first free forecast. Confirm a selected venue outcome, chosen probability, reasoning and destination; revisions, historical venue terms and resolution-based scoring persist locally. Swiping never records a forecast until explicit confirmation. |
+| Rooms and forecasts | Public/private shared rooms with owner invitation and membership-checked reads/writes, plus an owner-only personal space created on first free forecast. Confirm a selected venue outcome, chosen probability, reasoning and destination; revisions, historical venue terms and resolution-based scoring persist locally. Free-forecast gestures require confirmation; the separate testnet deck submits the available side on a right swipe after authorization. |
 | Activity and notices | Forecast score/correction history, simulated position/settlement history and opt-in in-app notices with read state. |
 | Paper simulation | Two-step review and confirmation; locally recorded synthetic shares, outcome, price snapshot and simulated settlement. **Never** a venue fill. |
 
@@ -48,7 +48,7 @@ Loading, empty, stale, error, restricted and resolved states have dedicated UI o
 
 ## Run locally
 
-**Requirements:** Node.js 22, pnpm 12, and network access to the public Limitless API for live discovery. No API key, signer, contract deployment or paid service is required. Wallet sign-in is optional: use an EIP-1193 wallet in a browser extension or a wallet's in-app browser supporting Base Sepolia. EOA verification works offline; smart-account verification uses a read-only Base Sepolia RPC (`https://sepolia.base.org` by default, optionally `BASE_SEPOLIA_RPC_URL`).
+**Requirements:** Node.js 22, pnpm 12, and network access to the public Limitless API for live discovery. Free forecasting and paper simulation need no API key, signer, contract deployment or paid service. Testnet trading additionally needs a configured Base Sepolia deployment, wallet and funded relayer. Wallet sign-in is optional for free reading: use an EIP-1193 wallet in a browser extension or a wallet's in-app browser supporting Base Sepolia. EOA verification works offline; smart-account verification uses a read-only Base Sepolia RPC (`https://sepolia.base.org` by default, optionally `BASE_SEPOLIA_RPC_URL`).
 
 ```bash
 pnpm install
@@ -88,6 +88,26 @@ flowchart LR
 
 This is one Next.js 15/React 19 TypeScript application. `src/lib/server/venue.ts` reads and normalizes external markets; `src/lib/server/domain.ts` enforces membership, locking, scoring and paper simulation; `src/lib/server/db.ts` owns SQLite schema/migrations. `src/app/api/` contains local endpoints, while `src/components/` and `src/app/(site)/` provide the mobile-first interface. SQLite uses WAL and foreign keys. Tests use isolated temporary databases and mocked external responses; fixtures in tests do **not** establish live venue integration.
 
+### Optional Privy sign-in
+
+Set `PRIVY_APP_ID` and `PRIVY_VERIFICATION_KEY` (the Privy dashboard's PEM public verification key), and enable email login in that Privy app. The server verifies the access token and issues a separate local session. Privy and wallet identities are not linked; existing wallet sign-in remains available. Privy sends authentication data to its service. Without configuration the option is disabled. No live Privy account or embedded-wallet trading has been verified.
+
+### Read-only local analyst
+
+Start Ollama locally with an already installed local model and set `OLLAMA_MODEL` to its name before starting the app, for example `OLLAMA_MODEL=qwen2.5:0.5b pnpm dev`. Signed-in users can request analysis from a market page. The model receives the question, resolution terms, deadline, outcomes and source metadata from the current venue snapshot; it does not browse, execute transactions or settle markets. Its output may be wrong. An unavailable model produces an error rather than a fabricated analysis. Local model use requires local compute and an installed Ollama model.
+
+### Base Sepolia testnet predictions
+
+The **Testnet swipe** view uses `contracts/BaseSepoliaPrediction.sol`, an equal-stake two-party contract with an unrestricted test-token faucet. The deployed Base Sepolia contracts are [prediction contract](https://sepolia.basescan.org/address/0x1E033dB73C4F0a3F689dEB60469cE37B0537B07c), [test token](https://sepolia.basescan.org/address/0x9e92FbF9cD78130a4E08c6a1e121d225567B632B), and [Chainlink ETH/USD feed](https://sepolia.basescan.org/address/0x4aDC67696bA383F43DD60A9e78F2C97Fbbfc7cb1). The deployment uses a 3,600-second maximum price age and an 86,400-second resolution window.
+
+Set `TESTNET_PREDICTION_ADDRESS`, `TESTNET_TOKEN_ADDRESS`, `BASE_SEPOLIA_RPC_URL` and the server-only `TESTNET_RELAYER_PRIVATE_KEY`. The relayer needs test ETH. Local development on the deploying machine has these settings in gitignored `.env.local`, including a plaintext testnet-only relayer key. The deployer's encrypted keystore and its password are stored under gitignored `.data/testnet-deployer/`; restrict access to both. Do not use this key for mainnet or real funds, publish these files, or place the relayer key in client-side environment variables.
+
+Sign in with the same injected Base Sepolia wallet, mint test tokens, and approve a capped allowance and a temporary delegate. A right swipe signs and relays the available side without another wallet prompt; a left swipe skips because the current contract only allows joining the creator's opposite side. This is not a two-direction trading deck. Privy-only sessions cannot yet trade. Pending, confirmed, reverted and unknown states are distinguished, with unknown submissions blocked from retry. Revoke the delegate when finished; its key is unencrypted in tab session storage and revocation does not revoke the token allowance. Setup, mint, market creation, resolution, refund and withdrawal still require wallet transactions and gas.
+
+The Chainlink rule uses the first successful checkpoint within the resolution window with a fresh round updated at or after the deadline, **not** the deadline price. Caller timing can affect the result; absent qualifying data allows refund after the window. Base Sepolia has no verified sequencer uptime feed configured here. `forge test --root contracts --contracts .` exercises the contract locally. This design and code are unaudited and unsuitable for mainnet.
+
+The relayer serializes submissions and persists its nonce and lock in SQLite. Every process using a relayer must share the same `DB_PATH`; do not use multiple independent databases with the same relayer key. An ambiguous broadcast or process crash can leave a durable lock; an operator must reconcile the recorded transaction hash and nonce before clearing it. Never blindly retry an unknown transaction.
+
 ### Optional wallet sign-in (Base Sepolia)
 
 Open `/auth`, choose **Continue with wallet**, and approve a **message signature**, not a transaction. Browser wallets are discovered through [EIP-6963](https://eips.ethereum.org/EIPS/eip-6963), with `window.ethereum` as a legacy fallback; when several announce, you must choose one. In a mobile browser without a provider, open the site in a compatible wallet's in-app browser or use the password path. No wallet SDK, hosted account, or external wallet service is silently substituted.
@@ -96,7 +116,7 @@ Open `/auth`, choose **Continue with wallet**, and approve a **message signature
 2. The server creates an [EIP-4361 SIWE](https://eips.ethereum.org/EIPS/eip-4361) message with address, actual site origin, chain ID, issue/expiry timestamps and a cryptographically random nonce. SQLite stores its exact text and nonce hash for five minutes; merely connecting creates no account/session.
 3. The browser signs the exact challenge with `personal_sign`. The server requires that stored message, origin, address, Sepolia chain and unexpired nonce; it verifies EOA signatures locally through `viem@2.57.13`. Contract-account signatures use chain-checked **read-only** Base Sepolia RPC verification (ERC-1271/6492 via viem). An RPC outage returns an explicit temporary error instead of accepting an unverified smart wallet. One transaction atomically consumes the nonce, finds/creates the separate wallet account, and issues an HttpOnly, SameSite=Lax **one-hour** session. Replay or wrong-origin attempts fail.
 
-Wallet-derived handles have a reserved `w_` namespace. A legacy password user with a colliding handle retains that account; the verified wallet receives another unique handle. Wallet address appears only in the signed-in session, **not** on public profiles. Signing in with a wallet neither accesses an existing password account nor enables wallet trading. Password sessions remain on their original 30-day server-side expiry. There is no wallet linking, recovery for a lost wallet, account-ownership attestation beyond signature control, or public production auth hardening.
+Wallet-derived handles have a reserved `w_` namespace. A legacy password user with a colliding handle retains that account; the verified wallet receives another unique handle. Wallet address appears only in the signed-in session, **not** on public profiles. Signing in with a wallet does not access an existing password account; a configured Base Sepolia testnet deployment permits separate test-token actions. Password sessions remain on their original 30-day server-side expiry. There is no wallet linking, recovery for a lost wallet, account-ownership attestation beyond signature control, or public production auth hardening.
 
 ### Venue freshness and identity
 
@@ -123,11 +143,11 @@ pnpm typecheck
 pnpm build
 ```
 
-The latest verified run passed **64 tests across 11 files**, TypeScript checking and a clean production build. Browser evidence covers live Sport/All catalog, private personal and joined shared-room forecasts, selected-outcome probability conversion, stale and total-outage retry, a refreshed deck that shrinks without trapping navigation, 320px and desktop layout, keyboard selection/Escape focus recovery and reduced-motion transition. Earlier MVP browser checks covered private-room denial/invitation, resolution history, simulated paper positions and notices. Wallet evidence includes actual server-issued challenges, real EOA cryptographic signatures, one-time/replay/origin checks, and a browser UI flow with a **simulated injected provider**; this does **not** prove compatibility with a physical wallet or undeployed smart wallet. Resolution, score correction, simulated settlement and ambiguity recovery are covered by isolated tests, not claimed live venue settlement. Details: [EVIDENCE.md](docs/agent/EVIDENCE.md), [DECISIONS.md](docs/agent/DECISIONS.md), [STATUS.md](docs/agent/STATUS.md).
+The latest local run passed **70 tests across 14 files**, TypeScript checking, and **10 contract tests**. On Base Sepolia, a fresh test wallet completed SIWE, mint, token approval, bounded delegate authorization, a relayed join, receipt confirmation and delegate revocation. The relayed join is [0x08d4…a6e](https://sepolia.basescan.org/tx/0x08d4c1d273ea01927e49dbed90ead83ef5cdb1aec701184bee25e8f3e9106a6e). The deadline and oracle checkpoint had not yet occurred during this verification, so live settlement remains unverified. A local Ollama model returned a market analysis but incorrectly identified the resolution source. Real Privy login and physical wallets were not exercised.
 
 ## Network and deployment policy
 
-Public Limitless market data relates to **Base mainnet**, but the application performs **no mainnet writes**. [Official Limitless developer documentation](https://docs.limitless.exchange/developers/introduction.md) does not offer an official Sepolia venue environment in the evaluated material. Wallet sign-in is an **off-chain signature** scoped to Base Sepolia **84532**, not a testnet transaction; the [official Base RPC](https://docs.base.org/get-started/connect-to-base.md) returned `0x14a34` in a read-only chain-ID check. No contract, deployment, broadcast, mainnet write or real-money order was performed. HTTP success is never reported as a venue fill.
+Limitless data relates to **Base mainnet**, but the app performs **no mainnet writes**. Its testnet mode targets chain **84532** only and is separate from Limitless and paper positions. Test-token transactions were broadcast on Base Sepolia; no real-money order was performed. HTTP success from the relay means submitted, not confirmed.
 
 This repository has **no public deployment configuration**. Running it locally is not permission to redistribute venue data, accept real-money orders, or expose the local password service on the internet.
 
