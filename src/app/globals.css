@@ -16,3 +16,17 @@
 @media(max-width:540px){.market-grid,.room-grid{grid-template-columns:1fr}.market-card{min-height:275px}.market-card h3{margin:1.8rem 0 auto}.filter-row{flex-direction:column}.search-field,.select-field,.select-field select{width:100%}.results-line{align-items:flex-start;flex-direction:column}.hero{min-height:650px}.hero-content h1{font-size:clamp(3.9rem,14vw,5.7rem)}.hero-description{max-width:345px}.hero-actions{align-items:flex-start;flex-direction:column;gap:1.5rem}.hero-footnote{font-size:.56rem;gap:.8rem}.odds-grid{gap:.5rem}.odds-grid>div{padding:.9rem}.info-panel dl>div,.review-list>div{gap:1rem}.list-item{gap:1rem;flex-wrap:wrap}.list-value{text-align:left}.profile-avatar{width:64px;height:64px;font-size:2rem}.modal-actions .button{flex:1}.header-account .text-button{display:none}}
 @media(max-width:360px){.hero-content h1{font-size:3.75rem}.hero-footnote{gap:.5rem}.wordmark{font-size:1.25rem}.header-account .button{font-size:.69rem;padding:.4rem}.market-card-top .mono{font-size:.58rem}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;animation:none!important;transition:none!important;transform:none!important}}
+
+@media (prefers-reduced-motion: no-preference) {
+  .swipe-card { transition: transform 180ms ease-out; }
+}
+
+.testnet-deck { width:min(100%,760px); margin:2rem auto; overflow-wrap:anywhere; }
+.testnet-deck fieldset { min-width:0; display:grid; gap:.85rem; border:1px solid var(--line); padding:1.2rem; }
+.testnet-deck legend { color:var(--lavender-light); padding:0 .4rem; }
+.testnet-deck fieldset label { display:grid; gap:.4rem; min-width:0; }
+.testnet-deck input:not([type=checkbox]), .testnet-deck select { width:100%; min-width:0; padding:.8rem; color:var(--ink); background:var(--surface); border:1px solid var(--line); }
+.testnet-deck button { cursor:pointer; padding:.7rem 1rem; color:var(--ink); background:var(--surface); border:1px solid var(--line); }
+.testnet-deck button:disabled { cursor:not-allowed; opacity:.55; }
+.testnet-deck .swipe-card { touch-action:pan-y; }
+.testnet-deck ul { overflow-wrap:anywhere; padding-left:1.25rem; }

@@ -5,7 +5,7 @@ import { useEffect, useRef, useState, type FormEvent, type PointerEvent } from '
 import type { Forecast, Market, Room } from '@/lib/contracts';
 import { api, invalidate, useResource, useSession } from './api';
 import { formatDate, formatProbability } from './display';
-import { swipeDirection } from './swipe-gesture';
+import { swipeDirection, swipeOffset } from './swipe-gesture';
 
 type Draft = { market: Market; outcomeIndex: 0 | 1; probability: string; rationale: string; destination: string };
 type Activity = { forecasts: Forecast[] };
@@ -30,6 +30,7 @@ export function SwipeDeck({ markets, generation, hasMore, loadMore, loadingMore,
   const rooms = useResource<{ rooms: Room[] }>(user ? '/api/rooms' : null);
   const [index, setIndex] = useState(0);
   const [revealed, setRevealed] = useState(false);
+  const [dragOffset, setDragOffset] = useState(0);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
@@ -133,9 +134,17 @@ export function SwipeDeck({ markets, generation, hasMore, loadMore, loadingMore,
       || (event.target as HTMLElement).closest('button, a, input, select, textarea')) return;
     pointer.current = { id: event.pointerId, x: event.clientX, y: event.clientY };
   }
+  function movePointer(event: PointerEvent<HTMLElement>) {
+    const start = pointer.current;
+    if (start?.id === event.pointerId) setDragOffset(swipeOffset(event.clientX - start.x, event.clientY - start.y));
+  }
+  function cancelPointer() {
+    pointer.current = null;
+    setDragOffset(0);
+  }
   function endPointer(event: PointerEvent<HTMLElement>) {
     const start = pointer.current;
-    pointer.current = null;
+    cancelPointer();
     if (!start || start.id !== event.pointerId) return;
     const direction = swipeDirection(event.clientX - start.x, event.clientY - start.y);
     if (direction) select(direction === 'first' ? 0 : 1);
@@ -249,7 +258,7 @@ export function SwipeDeck({ markets, generation, hasMore, loadMore, loadingMore,
   const aged = stale || market.source === 'STALE_LIMITLESS' || !Number.isFinite(observedAt) || Date.now() - observedAt > 120_000;
   return <section className="swipe-deck" aria-label="Swipe discovery">
     <p className="swipe-progress mono">{String(index + 1).padStart(2, '0')} / {markets.length} LOADED{hasMore ? ' · MORE AVAILABLE' : ''}</p>
-    <article className="swipe-card" onPointerDown={startPointer} onPointerUp={endPointer} onPointerCancel={() => { pointer.current = null; }} onLostPointerCapture={() => { pointer.current = null; }}>
+    <article className="swipe-card" style={{ transform: dragOffset ? `translateX(${dragOffset}px) rotate(${dragOffset / 30}deg)` : undefined, transition: pointer.current ? 'none' : undefined }} onPointerDown={startPointer} onPointerMove={movePointer} onPointerUp={endPointer} onPointerCancel={cancelPointer} onLostPointerCapture={cancelPointer}>
       <div className="swipe-card-top"><span className="eyebrow">◇ {market.category?.toUpperCase() || 'MARKET'} / LIMITLESS</span><span className={`source-pill ${eligible ? 'live' : ''}`}>{eligible ? 'LIVE SNAPSHOT' : aged ? 'STALE SNAPSHOT' : market.status === 'open' ? 'NOT AVAILABLE' : market.status.toUpperCase()}</span></div>
       <h2 ref={heading} tabIndex={-1}>{market.question}</h2>
       <p className="small muted">Choose an outcome to open a free-forecast form. Drag right for {market.outcomeLabels[0]}, left for {market.outcomeLabels[1]}, or use the buttons. Neither a drag nor a tap places an order.</p>

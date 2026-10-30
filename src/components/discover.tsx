@@ -7,6 +7,7 @@ import { useCatalogPages } from './catalog-pages';
 import { useResource } from './api';
 import { formatDate, formatProbability } from './display';
 import { SwipeDeck } from './swipe-deck';
+import { TestnetDeck } from './testnet-deck';
 import { InlineStatus, MarketCard, SectionHead } from './ui';
 
 const particles = `  ?  [ YES ] ────────────╮       ·      :
@@ -38,7 +39,7 @@ function ListedMarket({ market, index }: { market: Market; index: number }) {
 
 export function ExploreScreen() {
   const [category, setCategory] = useState<MarketCategory>('all');
-  const [view, setView] = useState<'swipe' | 'list'>('swipe');
+  const [view, setView] = useState<'swipe' | 'list' | 'testnet'>('swipe');
   const { catalog, markets: loadedMarkets, hasMore, loadMore, loadingMore, pageError, loadedPages } = useCatalogPages(category);
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState('all');
@@ -47,19 +48,19 @@ export function ExploreScreen() {
   const incomplete = !!catalog.data?.degradedCategories?.length;
   return <div className="page-wrap discover-page">
     <SectionHead eyebrow="01 / EXPLORE" title="Every question starts somewhere." description="Read real venue questions, then make your own free forecast. Venue odds are observations, not offers or guarantees."/>
-    <nav className="discover-categories" aria-label="Market categories">{categories.map(item => <button type="button" key={item.key} aria-current={category === item.key ? 'page' : undefined} onClick={() => setCategory(item.key)}>{item.label}</button>)}</nav>
-    <div className="discover-modes" role="group" aria-label="Explore view"><button type="button" aria-pressed={view === 'swipe'} onClick={() => setView('swipe')}>◇ Swipe</button><button type="button" aria-pressed={view === 'list'} onClick={() => setView('list')}>≡ List</button></div>
+    {view !== 'testnet' && <nav className="discover-categories" aria-label="Market categories">{categories.map(item => <button type="button" key={item.key} aria-current={category === item.key ? 'page' : undefined} onClick={() => setCategory(item.key)}>{item.label}</button>)}</nav>}
+    <div className="discover-modes" role="group" aria-label="Explore view"><button type="button" aria-pressed={view === 'swipe'} onClick={() => setView('swipe')}>◇ Forecast</button><button type="button" aria-pressed={view === 'testnet'} onClick={() => setView('testnet')}>↗ Testnet swipe</button><button type="button" aria-pressed={view === 'list'} onClick={() => setView('list')}>≡ List</button></div>
     {view === 'list' && <><div className="filter-row">
       <label className="search-field"><span className="sr-only">Search loaded questions</span><span aria-hidden="true">⌕</span><input type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Search loaded questions…" /></label>
       <label className="select-field"><span className="sr-only">Filter loaded questions by status</span><select value={filter} onChange={event => setFilter(event.target.value)}><option value="all">All statuses</option><option value="open">Open</option><option value="closed">Closed</option><option value="resolved">Resolved</option><option value="unknown">Unknown</option></select></label>
     </div><p className="small muted">Categories load their own venue pages. Search and status apply only to questions already loaded in this category; load more to expand the search.</p></>}
-    {catalog.data && <div className="results-line"><span>{view === 'list' ? `${markets.length} matching of ` : ''}{loadedMarkets.length} loaded {category === 'all' ? 'across categories' : category} · {loadedPages} {loadedPages === 1 ? 'page' : 'pages'}{hasMore ? ' · more pages available' : incomplete ? ' · remaining availability unknown' : ''}</span><span>{stale ? 'STALE VENUE SNAPSHOT' : catalog.data.source === 'LIVE_LIMITLESS' ? 'LIVE VENUE SNAPSHOT' : 'VENUE UNAVAILABLE'}{catalog.data.observedAt ? ` · ${formatDate(catalog.data.observedAt)}` : ''}</span></div>}
-    {!!catalog.data?.degradedCategories?.length && <p className="status-banner" role="status">Some category sources could not load: {catalog.data.degradedCategories.join(', ')}. Only successfully fetched questions are shown. <button className="text-button" type="button" onClick={catalog.reload}>Retry venue</button></p>}
-    <InlineStatus loading={catalog.loading} error={catalog.error || (catalog.data?.source === 'UNAVAILABLE' ? catalog.data.error || 'The venue is unavailable. Retry to fetch live questions.' : incomplete && catalog.data?.source === 'LIVE_LIMITLESS' ? null : catalog.data?.error || null)} stale={stale} retry={catalog.reload}>
+    {view !== 'testnet' && catalog.data && <div className="results-line"><span>{view === 'list' ? `${markets.length} matching of ` : ''}{loadedMarkets.length} loaded {category === 'all' ? 'across categories' : category} · {loadedPages} {loadedPages === 1 ? 'page' : 'pages'}{hasMore ? ' · more pages available' : incomplete ? ' · remaining availability unknown' : ''}</span><span>{stale ? 'STALE VENUE SNAPSHOT' : catalog.data.source === 'LIVE_LIMITLESS' ? 'LIVE VENUE SNAPSHOT' : 'VENUE UNAVAILABLE'}{catalog.data.observedAt ? ` · ${formatDate(catalog.data.observedAt)}` : ''}</span></div>}
+    {view !== 'testnet' && !!catalog.data?.degradedCategories?.length && <p className="status-banner" role="status">Some category sources could not load: {catalog.data.degradedCategories.join(', ')}. Only successfully fetched questions are shown. <button className="text-button" type="button" onClick={catalog.reload}>Retry venue</button></p>}
+    {view === 'testnet' ? <TestnetDeck/> : <InlineStatus loading={catalog.loading} error={catalog.error || (catalog.data?.source === 'UNAVAILABLE' ? catalog.data.error || 'The venue is unavailable. Retry to fetch live questions.' : incomplete && catalog.data?.source === 'LIVE_LIMITLESS' ? null : catalog.data?.error || null)} stale={stale} retry={catalog.reload}>
       {view === 'swipe'
         ? <SwipeDeck key={category} markets={loadedMarkets} generation={catalog.data?.observedAt ?? ''} hasMore={hasMore} loadMore={loadMore} loadingMore={loadingMore} pageError={pageError} stale={!!stale} incomplete={incomplete} onRefresh={catalog.reload}/>
         : <><div className="market-grid">{markets.map((market, index) => <ListedMarket market={stale ? { ...market, source: 'STALE_LIMITLESS' } : market} index={index} key={market.slug}/>)}</div>{!markets.length && <div className="status-card">{loadedMarkets.length ? 'No loaded questions match your search and status. Load more or change the filters.' : incomplete ? 'No questions were available from the fetched categories; some sources did not respond. Retry for missing questions.' : 'No eligible binary questions in this category right now. Refresh to check again.'} {!loadedMarkets.length && <button className="button button-secondary" type="button" onClick={catalog.reload}>Refresh venue ↗</button>}</div>}</>}
-    </InlineStatus>
+    </InlineStatus>}
     {view === 'list' && pageError && <p className="status-banner" role="alert">Could not load the next page: {pageError}. Try again.</p>}
     {view === 'list' && hasMore && <div className="catalog-more"><button className="button button-secondary" type="button" onClick={loadMore} disabled={loadingMore || catalog.loading || stale}>{loadingMore ? 'Loading more…' : 'Load more questions ↗'}</button></div>}
   </div>;
