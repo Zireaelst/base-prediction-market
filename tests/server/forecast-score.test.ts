@@ -4,9 +4,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { closeDatabase, database } from '../../src/lib/server/db';
 import { register } from '../../src/lib/server/auth';
-import { createRoom, addForecast, reviseForecast, reconcileMarket, getRoom, getActivity, setSettings, markNoticeRead } from '../../src/lib/server/domain';
+import { createRoom, addForecast, addForecastToDestination, reviseForecast, reconcileMarket, getRoom, getActivity, getProfile, listRooms, setSettings, markNoticeRead } from '../../src/lib/server/domain';
 import { DomainError } from '../../src/lib/server/errors';
 import type { Market } from '../../src/lib/contracts';
+import { legacyTermsVersion } from '../../src/lib/server/venue';
 
 let dir: string;
 const future = () => new Date(Date.now() + 3_600_000).toISOString();
@@ -15,6 +16,38 @@ beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'prediction-score-')); proce
 afterEach(() => { vi.useRealTimers(); closeDatabase(); rmSync(dir, { recursive: true, force: true }); delete process.env.DB_PATH; });
 
 describe('forecasts and immutable corrections', () => {
+  it('stores the selected second outcome estimate as first-token probability and corrects personal scores', () => {
+    const alice = register('alice', 'long-secret-one').user;
+    const bob = register('bob', 'long-secret-two').user;
+    const m = market();
+    const result = addForecastToDestination(alice.id, 'personal', m, '202', .7, 'Hornets have the stronger lineup');
+    expect(result.probability).toBeCloseTo(.3);
+    expect(result.outcomeId).toBe('202');
+    expect(getActivity(alice.id).forecasts).toHaveLength(1);
+    expect(getProfile('alice', alice.id).forecasts).toHaveLength(1);
+    expect(getProfile('alice', bob.id).forecasts).toHaveLength(0);
+    expect(listRooms(bob.id)).toHaveLength(0);
+    reconcileMarket(market(m.deadline, '202'));
+    expect(getActivity(alice.id).forecasts[0].score).toBeCloseTo(91);
+    reconcileMarket(market(m.deadline, '101'));
+    expect(getActivity(alice.id).forecasts[0].score).toBeCloseTo(51);
+    expect(getActivity(alice.id).forecasts[0].scoreHistory).toHaveLength(2);
+  });
+  it('rolls back first personal-room creation when a forecast is rejected', () => {
+    const alice = register('alice', 'long-secret-one').user;
+    const m = market();
+    expect(() => addForecastToDestination(alice.id, 'personal', { ...m, source: 'STALE_LIMITLESS' }, '101', .6, 'stale')).toThrow(DomainError);
+    expect(database().prepare("SELECT COUNT(*) AS count FROM rooms WHERE kind = 'personal'").get()).toEqual({ count: 0 });
+    expect(() => addForecastToDestination(alice.id, 'personal', m, 'nonexistent', .6, 'bad outcome')).toThrow(DomainError);
+    expect(database().prepare("SELECT COUNT(*) AS count FROM rooms WHERE kind = 'personal'").get()).toEqual({ count: 0 });
+  });
+  it('requires membership before saving in a shared room', () => {
+    const alice = register('alice', 'long-secret-one').user;
+    const bob = register('bob', 'long-secret-two').user;
+    const room = createRoom(alice.id, 'Friends', '', true);
+    expect(() => addForecastToDestination(bob.id, room.id, market(), '101', .65, 'I think yes')).toThrow(DomainError);
+    expect(getRoom(room.id, alice.id).forecasts).toEqual([]);
+  });
   it('locks revisions at deadline and preserves every previous revision', () => {
     const user = register('alice', 'long-secret-one').user;
     const room = createRoom(user.id, 'Room', '', false);
@@ -24,6 +57,15 @@ describe('forecasts and immutable corrections', () => {
     expect(revised.revisions).toEqual([{ probability: .7, rationale: 'first', at: first.createdAt }, { probability: .8, rationale: 'new reasoning', at: revised.revisedAt }]);
     vi.setSystemTime(new Date(m.deadline));
     expect(() => reviseForecast(user.id, first.id, .9, 'late', m)).toThrow(DomainError);
+  });
+  it('revises a pre-migration forecast only while its original question, terms, deadline and token identities still match', () => {
+    const user = register('alice', 'long-secret-one').user;
+    const room = createRoom(user.id, 'Room', '', false);
+    const original = market();
+    const forecast = addForecast(user.id, room.id, original, '101', .7, 'original');
+    database().prepare('UPDATE forecasts SET terms_version = ?, market_snapshot = NULL WHERE id = ?').run(legacyTermsVersion(original), forecast.id);
+    expect(() => reviseForecast(user.id, forecast.id, .8, 'different terms', { ...original, description: 'New venue resolution condition' })).toThrow(DomainError);
+    expect(reviseForecast(user.id, forecast.id, .8, 'same venue terms', original).revisions).toHaveLength(2);
   });
   it('scores YES probability independently of a NO outcome pick', () => {
     const user = register('alice', 'long-secret-one').user;

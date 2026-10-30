@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import Database from 'better-sqlite3';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { closeDatabase } from '../../src/lib/server/db';
 import { register, login, logout, sessionUser } from '../../src/lib/server/auth';
-import { createRoom, joinRoom, inviteToRoom, getRoom, listRooms, getProfile } from '../../src/lib/server/domain';
+import { createRoom, ensurePersonalRoom, joinRoom, inviteToRoom, getRoom, listRooms, getProfile } from '../../src/lib/server/domain';
 import { DomainError } from '../../src/lib/server/errors';
 
 let dir: string;
@@ -33,5 +34,28 @@ describe('local identity and room privacy', () => {
     expect(() => inviteToRoom(privateRoom.id, bob.id, 'alice')).toThrow(DomainError);
     expect(inviteToRoom(privateRoom.id, alice.id, 'bob').memberCount).toBe(2);
     expect(getRoom(privateRoom.id, bob.id).room.role).toBe('member');
+  });
+  it('keeps the idempotent personal room owner-only and out of the shared directory', () => {
+    const alice = register('alice', 'long-secret-one').user;
+    const bob = register('bob', 'long-secret-two').user;
+    const personal = ensurePersonalRoom(alice.id);
+    expect(ensurePersonalRoom(alice.id).id).toBe(personal.id);
+    expect(personal).toMatchObject({ private: true, kind: 'personal', memberCount: 1, role: 'owner' });
+    expect(listRooms(alice.id)).toEqual([]);
+    expect(listRooms(bob.id)).toEqual([]);
+    expect(() => getRoom(personal.id, bob.id)).toThrow(DomainError);
+    expect(() => joinRoom(personal.id, bob.id)).toThrow(DomainError);
+    expect(() => inviteToRoom(personal.id, alice.id, 'bob')).toThrow(DomainError);
+    expect(getRoom(personal.id, alice.id).room.id).toBe(personal.id);
+  });
+  it('migrates an existing room table and retains shared-room visibility', () => {
+    const legacy = new Database(process.env.DB_PATH!);
+    legacy.exec('CREATE TABLE rooms (id INTEGER PRIMARY KEY, name TEXT NOT NULL, description TEXT NOT NULL, owner_id INTEGER NOT NULL, private INTEGER NOT NULL, lock_at TEXT, created_at TEXT NOT NULL)');
+    legacy.close();
+    const alice = register('alice', 'long-secret-one').user;
+    const room = createRoom(alice.id, 'Old room', '', false);
+    expect(room.kind).toBe('shared');
+    expect(listRooms(null)).toMatchObject([{ id: room.id, kind: 'shared' }]);
+    expect(ensurePersonalRoom(alice.id).kind).toBe('personal');
   });
 });

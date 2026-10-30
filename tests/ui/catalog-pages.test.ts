@@ -12,9 +12,18 @@ describe('catalog page accumulation', () => {
     expect(listing.markets.map(item => item.slug)).toEqual([...first.map(item => item.slug), 'question-25']);
     expect(listing.hasMore).toBe(false);
   });
+  it('does not show the same venue market twice when categories use different slugs', () => {
+    const sport = { ...market('team-win'), venueMarketId: '431' };
+    const mixed = { ...market('team-win-alias'), venueMarketId: '431' };
+    expect(catalogListing([page([sport]), page([mixed])]).markets).toEqual([sport]);
+  });
   it('allows the next page when a full 25-market page is loaded', () => {
     expect(catalogListing([page(Array.from({ length: 25 }, (_, index) => market(String(index))))]).hasMore).toBe(true);
     expect(catalogListing([page([])]).hasMore).toBe(false);
+  });
+  it('requires refresh rather than pretending a partially failed category has a known next page', () => {
+    const mixed: Catalog = { ...page(Array.from({ length: 25 }, (_, index) => market(`question-${index}`))), degradedCategories: ['sport'] };
+    expect(catalogListing([mixed]).hasMore).toBe(false);
   });
   it('marks cached catalog cards stale while retaining the observed market identity', () => {
     const original = market('question-1');

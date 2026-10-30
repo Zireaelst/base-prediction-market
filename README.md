@@ -6,13 +6,18 @@
 
 ## Product preview
 
-The images below are **actual captures from the locally running production build**, not design mockups. Market questions and prices came from public Limitless reads on 2026-10-29; they will change. Accounts, room forecasts, and paper positions in the captures were created locally. No screenshot depicts an executed venue trade.
+The images below are **actual captures from locally running production builds**, not design mockups. Earlier market/room captures used public Limitless reads on 2026-10-29; swipe captures used live Sport venue data on 2026-10-30. Accounts and forecasts shown were created locally. No screenshot depicts an executed venue trade.
 
 <a href="docs/agent/screenshots/landing-desktop.png"><img src="docs/agent/screenshots/landing-desktop.png" alt="Desktop landing page with original lavender ASCII outcome graphic, Geist Pixel headline, Explore action, and read-only market cards" width="900"></a>
 
 <details>
 <summary>Mobile landing and discovery</summary>
 <p><a href="docs/agent/screenshots/landing-mobile.png"><img src="docs/agent/screenshots/landing-mobile.png" alt="Mobile landing showing the hero, Explore action, market previews, and bottom navigation" width="280"></a> <a href="docs/agent/screenshots/explore-mobile.png"><img src="docs/agent/screenshots/explore-mobile.png" alt="Mobile Explore screen showing search, status filter, observed-at timestamp, and live venue question" width="280"></a></p>
+</details>
+
+<details>
+<summary>Live Sport swipe discovery and free forecast confirmation</summary>
+<p><a href="docs/agent/screenshots/swipe-sport-mobile.png"><img src="docs/agent/screenshots/swipe-sport-mobile.png" alt="390px mobile Explore swipe card for a live Limitless Thunder versus Rockets event, with separate outcome buttons, Skip, category chips and observed timestamp" width="280"></a> <a href="docs/agent/screenshots/swipe-confirm-mobile.png"><img src="docs/agent/screenshots/swipe-confirm-mobile.png" alt="390px mobile free forecast confirmation for Rockets with explicit probability, venue outcome token, resolution terms and private personal destination" width="280"></a></p>
 </details>
 
 <details>
@@ -32,10 +37,10 @@ The design uses black, off-white and restrained lavender, bundled **Geist Pixel 
 | Surface | Behavior |
 |---|---|
 | Landing | Product message, Explore and Rooms actions, read-only live question previews, responsive navigation. |
-| Explore | Paginated Limitless catalog, loaded-question search and status filter, observed timestamps, live/stale/unavailable labels and retry. Filtering does not claim to search unloaded venue pages. |
+| Explore | Swipe-first cards and a List alternative; independently paginated live Limitless Crypto, Sport, Esports, Finance and Politics categories. Right/left chooses the first/second **venue-labeled** outcome for review, never saves on gesture; Skip is separate. Loaded-only search/filter, observed timestamps, stale/partial/outage states and retry remain available. Unsupported binary/group mappings are excluded rather than guessed. |
 | Market detail | Question, original venue resolution terms, deadline, venue ID, outcome identities, terms version and observed probabilities. Paper action is explicitly separate from forecasting. |
 | Accounts and profile | Local password or Base Sepolia EIP-4361 wallet sign-in, separate identities, revocable server-side session, private profile activity, notification preference and sign-out. No wallet or funds are required for the password path. |
-| Rooms and forecasts | Public or private room, public join or owner invitation, membership-checked reads/writes, free YES-probability forecasts with reasoning and revision history. |
+| Rooms and forecasts | Public/private shared rooms with owner invitation and membership-checked reads/writes, plus an owner-only personal space created on first free forecast. Confirm a selected venue outcome, chosen probability, reasoning and destination; revisions, historical venue terms and resolution-based scoring persist locally. Swiping never records a forecast until explicit confirmation. |
 | Activity and notices | Forecast score/correction history, simulated position/settlement history and opt-in in-app notices with read state. |
 | Paper simulation | Two-step review and confirmation; locally recorded synthetic shares, outcome, price snapshot and simulated settlement. **Never** a venue fill. |
 
@@ -63,11 +68,11 @@ To use an isolated local database, set `DB_PATH` to an **absolute SQLite file pa
 
 ### First-use walkthrough
 
-1. Open **Explore** and inspect a question. Its observed price is an informational venue snapshot, not an offer; read the complete resolution terms and deadline on the detail page.
-2. Under **Sign in**, create a password account **or** choose a wallet. Wallet login asks you to connect, switch to Base Sepolia if necessary, and sign a free message; it never submits a transaction. Wallet accounts and password accounts are separate—there is no automatic linking or migration. In **Rooms**, create a public room or a private one. A private-room owner can invite an **existing account** by handle; nonmembers cannot read it or join uninvited.
-3. Join or open a room, pick an open live question, enter your **chance of YES** and reasoning, then post a **free forecast**. The stated pick may be NO, but the numeric probability always refers to YES. Revise until the recorded lock time, venue closure, terms change, resolution or loss of fresh venue data blocks revisions.
-4. In a supported open CLOB market detail, optionally review a **paper-only** position. Confirming records a hypothetical fill in the local ledger; it neither sends an HTTP venue order nor moves funds.
-5. Inspect **Activity** and **Profile** for forecast revisions, paper history and scores. Enable in-app notices in Profile if you want local resolution/correction notices.
+1. Open **Explore**. Choose a category such as **Sport**; swipe right for the first named outcome, left for the second, or use the visible buttons. **Skip** moves on without saving. Switch to **List** for loaded-question search and filtering. Venue odds are informational snapshots, not offers; inspect the original resolution terms and deadline before continuing.
+2. Create a password account or sign in with a supported Base Sepolia wallet signature. Wallet and password identities stay separate. Connecting does not sign a transaction.
+3. Confirm a **free forecast**: enter your chance for the selected named outcome and explain why. Save to your private personal space by default, or choose a room you already joined. The server checks fresh venue terms before writing. Activity displays the chosen outcome chance; the internal score stores the first venue token probability (`1 − chosen chance` for the second outcome). A forecast never moves funds. Shared private rooms still require owner invitation.
+4. Revise an existing forecast from its room before its market locks; review original venue terms and score corrections in Activity. Interrupted submissions reconcile with Activity before any explicit retry.
+5. On an eligible open CLOB market detail, optionally review a **paper-only** position. Confirming records a hypothetical local fill, never a venue order. Enable opt-in notices in Profile if desired.
 
 ## Data flow and boundaries
 
@@ -95,14 +100,14 @@ Wallet-derived handles have a reserved `w_` namespace. A legacy password user wi
 
 ### Venue freshness and identity
 
-- Catalog pages are fetched from public Limitless endpoints, normalized and cached briefly. Incomplete market/outcome identity or missing resolution terms are excluded; filtered records do not prematurely terminate pagination.
-- Market and outcome IDs, venue slug, deadline, resolution text and a terms fingerprint are retained. The detail view shows the venue's own terms even when no separate structured resolution-source field exists.
-- Visible market screens refresh every 30 seconds. A snapshot older than two minutes, an upstream outage or a failed client refresh is labeled **stale**; cached questions remain readable with a retry action. No fixture is silently substituted for a failed live read.
-- A stale, closed or unsupported market cannot create a free forecast or paper position. The server fetches a fresh market again before recording a paper action; browser display prices are not assumed executable.
+- Catalog pages use read-only public Limitless category paths and page-by-path endpoints. Binary records missing reliable outcome labels, token IDs or resolution terms, plus group markets, are excluded. Categories paginate independently and All interleaves their eligible questions; a partial category outage is labeled incomplete rather than falsely exhausted.
+- Market and outcome IDs, venue slug, deadline, original resolution text, outcome labels and a terms fingerprint are retained. The detail view shows the venue's own terms even when no separate structured resolution-source field exists; forecasts save the displayed original terms independently of the mutable venue cache.
+- Visible market screens refresh every 30 seconds. A snapshot older than two minutes or an upstream outage is labeled **stale**; cached questions remain readable with Retry. A partially failing All catalog is labeled incomplete. No fixture is silently substituted for a failed live read.
+- A stale, closed or unsupported market cannot create a free forecast or paper position. The server fetches fresh market data and compares the displayed fingerprint before recording a forecast, requiring review on changed terms. Paper actions also re-fetch fresh venue data; browser prices are not executable.
 
 ### Free forecasts and resolution
 
-Forecasts only store opinions. For a resolved binary question, the Brier-derived score is `100 × (1 − (p − y)²)`, where `p` is the recorded **YES** probability and `y` is 1 for YES or 0 for NO. The outcome pick does not redefine `p`. Revisions are append-only history; corrected venue outcomes create new score-history entries. Split or contradictory outcomes do not receive a binary score. If a later venue observation becomes ambiguous, a prior result is labeled **last confirmed** rather than silently presented as the latest verdict.
+Forecasts only store opinions. For a resolved binary question, the Brier-derived score is `100 × (1 − (p − y)²)`, where `p` is the probability for the **first venue outcome token** and `y` is 1 when that outcome wins or 0 when the second wins. Selecting the second outcome with estimated chance `q` stores `p = 1 − q`; the chosen `q` remains visible in Activity. Revisions are append-only history; corrected venue outcomes create new score-history entries. Split or contradictory outcomes do not receive a binary score. If a later venue observation becomes ambiguous, a prior result is labeled **last confirmed** rather than silently presented as the latest verdict. Legacy forecasts made before original-terms snapshots cannot reconstruct their historical venue labels if the cache has since changed.
 
 ### Paper model: `midpoint-v1`
 
@@ -118,7 +123,7 @@ pnpm typecheck
 pnpm build
 ```
 
-The last verified run passed **35 tests across eight files**, TypeScript checking and a clean production build. Browser evidence covers live catalog pagination, two-account private-room denial and invitation, posting and revising a free forecast, confirming and reading a simulated position, injected outage/retry behavior, mobile layout, keyboard focus and reduced motion. Wallet evidence includes actual server-issued challenges, real EOA cryptographic signatures, one-time/replay/origin checks, and a browser UI flow exercised with a **simulated injected provider**; this does **not** prove compatibility with a physical wallet or undeployed smart wallet. Resolution, score correction, simulated settlement, ambiguity recovery and notification opt-in are covered by deterministic local tests; **an actual venue resolution was not observed**. Details: [EVIDENCE.md](docs/agent/EVIDENCE.md), [DECISIONS.md](docs/agent/DECISIONS.md), [STATUS.md](docs/agent/STATUS.md).
+The latest verified run passed **64 tests across 11 files**, TypeScript checking and a clean production build. Browser evidence covers live Sport/All catalog, private personal and joined shared-room forecasts, selected-outcome probability conversion, stale and total-outage retry, a refreshed deck that shrinks without trapping navigation, 320px and desktop layout, keyboard selection/Escape focus recovery and reduced-motion transition. Earlier MVP browser checks covered private-room denial/invitation, resolution history, simulated paper positions and notices. Wallet evidence includes actual server-issued challenges, real EOA cryptographic signatures, one-time/replay/origin checks, and a browser UI flow with a **simulated injected provider**; this does **not** prove compatibility with a physical wallet or undeployed smart wallet. Resolution, score correction, simulated settlement and ambiguity recovery are covered by isolated tests, not claimed live venue settlement. Details: [EVIDENCE.md](docs/agent/EVIDENCE.md), [DECISIONS.md](docs/agent/DECISIONS.md), [STATUS.md](docs/agent/STATUS.md).
 
 ## Network and deployment policy
 

@@ -10,20 +10,40 @@ import { DomainError } from '../../src/lib/server/errors';
 import type { Market } from '../../src/lib/contracts';
 
 let dir: string;
-const payload = () => ({ id: 17, slug: 'test-market', title: 'Test question?', description: '<p>Resolution &amp; criteria</p>', expirationTimestamp: Date.now() + 3600_000, status: 'FUNDED', tradeType: 'clob', marketType: 'single', tokens: { yes: '101', no: '202' }, prices: [.4, .6], winningOutcomeIndex: null, payoutNumerators: null });
+const payload = () => ({ id: 17, slug: 'test-market', title: 'Will test question resolve true?', description: '<p>Resolution &amp; criteria</p>', expirationTimestamp: Date.now() + 3600_000, status: 'FUNDED', tradeType: 'clob', marketType: 'single', tokens: { yes: '101', no: '202' }, prices: [.4, .6], winningOutcomeIndex: null, payoutNumerators: null });
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'prediction-venue-')); process.env.DB_PATH = join(dir, 'test.sqlite'); });
 afterEach(() => { vi.unstubAllGlobals(); closeDatabase(); rmSync(dir, { recursive: true, force: true }); delete process.env.DB_PATH; });
 
 describe('read-only venue and paper model', () => {
+  it('preserves sports teams as token-specific outcomes instead of calling them Yes and No', () => {
+    const market = normalizeMarket({
+      ...payload(),
+      title: '76ers vs Hornets',
+      description: '<p>76ers win resolves 76ers; Hornets win resolves Hornets.</p>',
+      metadata: { outcomeLabels: { '0': '76ers', '1': 'Hornets' } },
+      categories: ['Sports'],
+      properties: { domain: 'sport' },
+    }, new Date().toISOString());
+    expect(market?.outcomeIds).toEqual(['101', '202']);
+    expect(market?.outcomeLabels).toEqual(['76ers', 'Hornets']);
+  });
   it('filters incomplete identity, strips HTML, uses correct deadline and stale cache on outage', async () => {
     const sample = payload();
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(json({ data: [sample, { ...sample, slug: '', id: null }], totalMarketsCount: 2 })).mockRejectedValue(new Error('network offline')));
-    const live = await getCatalog();
+    let offline = false;
+    vi.stubGlobal('fetch', vi.fn(async (input: string | URL | Request) => {
+      const url = new URL(String(input));
+      if (offline) throw new Error('network offline');
+      if (url.pathname === '/market-pages/by-path') return json({ id: 'crypto-page', fullPath: '/crypto' });
+      if (url.pathname === '/market-pages/crypto-page/markets') return json({ data: [sample, { ...sample, slug: '', id: null }], pagination: { page: 1, limit: 25, total: 2, totalPages: 1 } });
+      throw new Error('network offline');
+    }));
+    const live = await getCatalog({ category: 'crypto' });
     expect(live.markets).toHaveLength(1);
     expect(live.markets[0]).toMatchObject({ description: 'Resolution & criteria', venueMarketId: '17', outcomeIds: ['101', '202'], source: 'LIVE_LIMITLESS' });
     expect(live.markets[0].deadline).toBe(new Date(sample.expirationTimestamp).toISOString());
-    const stale = await getCatalog({ force: true });
+    offline = true;
+    const stale = await getCatalog({ category: 'crypto', force: true });
     expect(stale.source).toBe('STALE_LIMITLESS');
     expect(stale.markets[0].observedAt).toBe(live.markets[0].observedAt);
     expect((await getMarket('test-market', { force: true })).source).toBe('STALE_LIMITLESS');
@@ -31,8 +51,13 @@ describe('read-only venue and paper model', () => {
   it('retains venue pagination after filtering invalid identities from a full raw page', async () => {
     const rows = Array.from({ length: 25 }, (_, index) => ({ ...payload(), id: index + 1, slug: `question-${index}` }));
     rows[9] = { ...rows[9], slug: '' };
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ data: rows })));
-    const catalog = await getCatalog();
+    vi.stubGlobal('fetch', vi.fn(async (input: string | URL | Request) => {
+      const url = new URL(String(input));
+      if (url.pathname === '/market-pages/by-path') return json({ id: 'crypto-page', fullPath: '/crypto' });
+      if (url.pathname === '/market-pages/crypto-page/markets') return json({ data: rows, pagination: { page: 1, limit: 25, total: 50, totalPages: 2 } });
+      throw new Error(`Unexpected path ${url.pathname}`);
+    }));
+    const catalog = await getCatalog({ category: 'crypto' });
     expect(catalog.markets).toHaveLength(24);
     expect(catalog.hasNextPage).toBe(true);
   });
